@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./mvnw clean:*)",
+      "Bash(./mvnw dependency:resolve -q)",
+      "Bash(./mvnw dependency:tree)",
+      "Bash(./mvnw dependency:unpack -Dartifact=org.springframework.boot:spring-boot-autoconfigure:4.0.5:jar -DoutputDirectory=/tmp/sb-autoconfigure -q)",
+      "Read(//tmp/**)",
+      "Bash(xargs -I{} basename {})",
+      "Bash(jar tf:*)"
+    ]
+  }
+}
