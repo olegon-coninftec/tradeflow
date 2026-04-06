@@ -28,6 +28,12 @@ spring:
     keyspace-name: tradeflow
     schema-action: CREATE_IF_NOT_EXISTS
 
+  graphql:
+    graphiql:
+      enabled: true
+      path: /graphiql
+    path: /graphql
+
 server:
   port: 8080
 

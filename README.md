@@ -1,45 +1,49 @@
 # ⚡ TradeFlow — Trade Processing Platform
 
-A full-stack trade processing system built with **Apache Kafka**, **Apache Cassandra**, **Spring Boot**, and **React**. Designed to mirror the real-time event-driven architecture used at JPMorgan Chase for trade ingestion, validation, and persistence.
+A full-stack trade processing system built with **Apache Kafka**, **Apache Cassandra**, **Spring Boot**, **GraphQL**, and **React**. Designed to mirror the real-time event-driven architecture used at XYZ for trade ingestion, validation, and persistence.
 
 ---
 
 ## 🏗️ Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────┐
-│  React UI (localhost:3000)                      │
-│  Submit trades · Search by symbol/trader        │
-│  Live stats · Status badges                     │
-└──────────────────┬──────────────────────────────┘
-                   │ HTTP POST /api/trades
-                   │ HTTP GET  /api/trades/symbol/{symbol}
-                   │ HTTP GET  /api/trades/trader/{traderId}
-                   │ HTTP GET  /api/trades/{tradeId}
-┌──────────────────▼──────────────────────────────┐
-│  Spring Boot API (localhost:8080)               │
-│  TradeController · TradeEventProducer           │
-│  TradeQueryService · CORS enabled               │
-└──────────┬──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  React SPA (localhost:3000)                             │
+│                                                         │
+│  / — Dashboard Page                                     │
+│      Submit trades · REST queries · Live stats          │
+│                                                         │
+│  /graphql-explorer — GraphQL Explorer Page              │
+│      Apollo Client · Field selector · JSON/Table view   │
+└──────────────────┬──────────────────────────────────────┘
+                   │ REST    → HTTP POST/GET /api/trades/**
+                   │ GraphQL → HTTP POST    /graphql
+┌──────────────────▼──────────────────────────────────────┐
+│  Spring Boot API (localhost:8080)                       │
+│                                                         │
+│  REST:    TradeController + TradeQueryService           │
+│  GraphQL: TradeGraphQLController (Spring for GraphQL)   │
+│  Config:  WebConfig (Global CORS)                       │
+└──────────┬──────────────────────────────────────────────┘
            │ Kafka publish (symbol as partition key)
-┌──────────▼──────────────────────────────────────┐
-│  Apache Kafka (localhost:9092)                  │
-│  Topic: trade-events · 3 partitions             │
-│  Symbol-keyed → guaranteed order per instrument │
-└──────────┬──────────────────────────────────────┘
+┌──────────▼──────────────────────────────────────────────┐
+│  Apache Kafka (localhost:9092)                          │
+│  Topic: trade-events · 3 partitions                     │
+│  Symbol-keyed → guaranteed order per instrument         │
+└──────────┬──────────────────────────────────────────────┘
            │ @KafkaListener · manual acknowledgment
-┌──────────▼──────────────────────────────────────┐
-│  Trade Consumer + Validator                     │
-│  EXECUTED / FAILED · offset commit on success   │
-│  TradePersistenceService                        │
-└──────────┬──────────────────────────────────────┘
+┌──────────▼──────────────────────────────────────────────┐
+│  Trade Consumer + Validator                             │
+│  EXECUTED / FAILED · offset commit on success only      │
+│  TradePersistenceService                                │
+└──────────┬──────────────────────────────────────────────┘
            │ Writes to 3 tables simultaneously
-┌──────────▼──────────────────────────────────────┐
-│  Apache Cassandra (localhost:9042)              │
-│  trades_by_symbol  ← query by instrument        │
-│  trades_by_trader  ← query by desk/trader       │
-│  trades_by_id      ← lookup by trade ID         │
-└─────────────────────────────────────────────────┘
+┌──────────▼──────────────────────────────────────────────┐
+│  Apache Cassandra (localhost:9042)                      │
+│  trades_by_symbol  ← query by instrument                │
+│  trades_by_trader  ← query by desk/trader               │
+│  trades_by_id      ← lookup by trade ID                 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -53,7 +57,10 @@ A full-stack trade processing system built with **Apache Kafka**, **Apache Cassa
 | Build | Maven | 3.x |
 | Messaging | Apache Kafka | 7.6.0 (Confluent) |
 | Database | Apache Cassandra | 4.1 |
-| Frontend | React | 18.x |
+| API | REST + GraphQL (Spring for GraphQL) | latest |
+| Frontend | React | 19.x |
+| GraphQL Client | Apollo Client | 3.11.8 |
+| Routing | React Router DOM | 7.x |
 | HTTP Client | Axios | latest |
 | Containers | Docker + Docker Compose | latest |
 
@@ -138,7 +145,6 @@ WITH replication = {
 
 USE tradeflow;
 
--- Query by symbol (e.g. all AAPL trades)
 CREATE TABLE IF NOT EXISTS trades_by_symbol (
     symbol      TEXT,
     timestamp   TIMESTAMP,
@@ -152,7 +158,6 @@ CREATE TABLE IF NOT EXISTS trades_by_symbol (
     PRIMARY KEY ((symbol), timestamp, trade_id)
 ) WITH CLUSTERING ORDER BY (timestamp DESC, trade_id ASC);
 
--- Query by trader (e.g. all trades by trader-001)
 CREATE TABLE IF NOT EXISTS trades_by_trader (
     trader_id   TEXT,
     timestamp   TIMESTAMP,
@@ -166,7 +171,6 @@ CREATE TABLE IF NOT EXISTS trades_by_trader (
     PRIMARY KEY ((trader_id), timestamp, trade_id)
 ) WITH CLUSTERING ORDER BY (timestamp DESC, trade_id ASC);
 
--- Lookup by trade ID
 CREATE TABLE IF NOT EXISTS trades_by_id (
     trade_id    UUID PRIMARY KEY,
     trader_id   TEXT,
@@ -190,17 +194,22 @@ Type `exit` to leave cqlsh.
 
 Or run `TradeflowApplication.java` directly from IntelliJ IDEA.
 
-The API will be available at `http://localhost:8080`.
+Available endpoints:
+- REST API: `http://localhost:8080/api/trades`
+- GraphQL API: `http://localhost:8080/graphql`
+- GraphiQL IDE: `http://localhost:8080/graphiql`
 
 ### 6. Start the React Frontend
 
 ```bash
 cd tradeflow-ui
-npm install
+npm install --legacy-peer-deps
 npm start
 ```
 
-The UI will open automatically at `http://localhost:3000`.
+The UI opens automatically at `http://localhost:3000`.
+
+> ⚠️ Use `--legacy-peer-deps` due to Apollo Client 3.x peer dependency constraints with React 19.
 
 ---
 
@@ -237,7 +246,7 @@ docker compose down -v
 
 ---
 
-## 📡 API Reference
+## 📡 REST API Reference
 
 ### Submit a Trade
 
@@ -287,17 +296,13 @@ GET /api/trades/{tradeId}
 GET /api/trades/symbol/{symbol}
 ```
 
-Example: `GET /api/trades/symbol/AAPL`
-
 ### Get Trades by Trader
 
 ```
 GET /api/trades/trader/{traderId}
 ```
 
-Example: `GET /api/trades/trader/trader-001`
-
-### Valid Values
+### Valid Field Values
 
 | Field | Valid Values |
 |---|---|
@@ -309,6 +314,139 @@ Example: `GET /api/trades/trader/trader-001`
 
 ---
 
+## 🔷 GraphQL API Reference
+
+### Endpoint
+
+```
+POST http://localhost:8080/graphql
+Content-Type: application/json
+```
+
+### Browser IDE
+
+```
+http://localhost:8080/graphiql
+```
+
+### Schema
+
+```graphql
+type Trade {
+    tradeId:    ID!
+    traderId:   String!
+    symbol:     String!
+    side:       Side!
+    quantity:   Int!
+    price:      Float!
+    tradeValue: Float!
+    status:     TradeStatus!
+    exchange:   String!
+    timestamp:  String!
+}
+
+enum Side {
+    BUY
+    SELL
+}
+
+enum TradeStatus {
+    PENDING
+    EXECUTED
+    FAILED
+    CANCELLED
+}
+
+type Query {
+    tradeById(tradeId: ID!):           Trade
+    tradesBySymbol(symbol: String!):   [Trade!]!
+    tradesByTrader(traderId: String!): [Trade!]!
+}
+```
+
+### Sample Queries
+
+**Query by symbol — request only the fields you need:**
+
+```graphql
+query {
+  tradesBySymbol(symbol: "AAPL") {
+    tradeId
+    symbol
+    side
+    quantity
+    price
+    tradeValue
+    status
+  }
+}
+```
+
+**Query by trader:**
+
+```graphql
+query {
+  tradesByTrader(traderId: "trader-001") {
+    tradeId
+    symbol
+    side
+    status
+    tradeValue
+  }
+}
+```
+
+**Lookup by trade ID:**
+
+```graphql
+query {
+  tradeById(tradeId: "682892b9-7b56-47ac-a4e1-b26da73df071") {
+    tradeId
+    symbol
+    side
+    quantity
+    price
+    status
+    timestamp
+  }
+}
+```
+
+**Minimal projection — only two fields returned:**
+
+```graphql
+query {
+  tradesBySymbol(symbol: "AAPL") {
+    tradeId
+    status
+  }
+}
+```
+
+### Query via curl
+
+```bash
+curl -X POST http://localhost:8080/graphql \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "{ tradesBySymbol(symbol: \"AAPL\") { tradeId symbol side status tradeValue } }"
+  }'
+```
+
+### GraphQL vs REST — When to Use Each
+
+| Concern | REST | GraphQL |
+|---|---|---|
+| External integrations | ✅ Universal, easy to cache | ❌ Overkill |
+| Fixed response shapes | ✅ Simple and predictable | ❌ Unnecessary flexibility |
+| Front-office dashboards | ❌ Over-fetches unused fields | ✅ Client picks exact fields |
+| Multiple consumers (risk, compliance, settlement) | ❌ One shape fits all | ✅ Each consumer defines its own projection |
+| Schema as typed contract | ❌ Implicit | ✅ Enum-enforced, self-documenting |
+
+Both APIs share the same `TradeQueryService` — zero business logic duplication. GraphQL is a different transport layer over the same service.
+
+---
+
 ## 🔄 Trade Lifecycle
 
 ```
@@ -316,34 +454,29 @@ POST /api/trades
       │
       ▼
 TradeEventProducer
-  - Assigns tradeId (UUID)
-  - Sets status = PENDING
-  - Sets timestamp
-  - Publishes to Kafka (keyed by symbol)
+  Assigns tradeId (UUID) · Sets status=PENDING · Sets timestamp
+  Publishes to Kafka keyed by symbol
       │
       ▼
 Kafka topic: trade-events (3 partitions)
-  - Same symbol → always same partition
-  - Guarantees ordering per instrument
+  Same symbol → always same partition → ordering guaranteed per instrument
       │
       ▼
 TradeEventConsumer (@KafkaListener)
-  - Receives message
-  - Validates (side, exchange, quantity, price, $50M limit)
+  Validates: side, exchange, quantity, price, $50M limit
       │
       ├── Valid   → status = EXECUTED
       └── Invalid → status = FAILED
       │
       ▼
 TradePersistenceService
-  - Writes to trades_by_symbol
-  - Writes to trades_by_trader
-  - Writes to trades_by_id
+  Writes to trades_by_symbol
+  Writes to trades_by_trader
+  Writes to trades_by_id
       │
       ▼
 ack.acknowledge()
-  - Offset committed to Kafka
-  - Message removed from queue
+  Offset committed · Message removed from Kafka
 ```
 
 ---
@@ -352,43 +485,27 @@ ack.acknowledge()
 
 ### Design Philosophy — Query-Driven Modeling
 
-Cassandra requires tables to be designed around specific query patterns, not around the data itself. Every query needs its own optimized table. This project implements three access patterns with three dedicated tables.
+Cassandra requires tables to be designed around specific query patterns, not the data shape. Every access pattern gets its own optimized table. The same trade is written to all three tables simultaneously — storage is cheap, query performance is everything.
 
 ### Table 1: `trades_by_symbol`
 
-**Query pattern:** All trades for a given instrument, newest first.
-
-```sql
-SELECT * FROM trades_by_symbol WHERE symbol = 'AAPL';
-```
+**Query:** All trades for a given instrument, newest first.
 
 **Primary key:** `((symbol), timestamp DESC, trade_id ASC)`
-- Partition key: `symbol` — all AAPL trades on the same node
-- Clustering: `timestamp DESC` — newest trades returned first automatically
+- Partition key `symbol` — all AAPL trades co-located on the same node
+- Clustering `timestamp DESC` — newest trades returned first automatically
 
 ### Table 2: `trades_by_trader`
 
-**Query pattern:** All trades submitted by a specific trader, newest first.
-
-```sql
-SELECT * FROM trades_by_trader WHERE trader_id = 'trader-001';
-```
+**Query:** All trades by a specific trader, newest first.
 
 **Primary key:** `((trader_id), timestamp DESC, trade_id ASC)`
 
 ### Table 3: `trades_by_id`
 
-**Query pattern:** Look up a specific trade by its unique ID.
-
-```sql
-SELECT * FROM trades_by_id WHERE trade_id = 682892b9-7b56-47ac-a4e1-b26da73df071;
-```
+**Query:** Point lookup by unique trade ID.
 
 **Primary key:** `trade_id` (simple partition key)
-
-### Why Three Tables?
-
-Every trade is written to all three tables simultaneously. Storage is cheap. Query performance at scale is everything. This is the standard Cassandra pattern used at companies processing billions of records daily.
 
 ---
 
@@ -399,17 +516,8 @@ Every trade is written to all three tables simultaneously. Storage is cheap. Que
 | Property | Value | Reason |
 |---|---|---|
 | Partitions | 3 | 3 parallel consumer threads |
-| Replication factor | 1 | Single broker (dev only — use 3 in prod) |
+| Replication factor | 1 | Single broker — use 3 in production |
 | Partition key | `symbol` | Guarantees ordering per instrument |
-
-### Producer Settings
-
-| Setting | Value | Reason |
-|---|---|---|
-| `enable.idempotence` | `true` | Exactly-once delivery guarantee |
-| `acks` | `-1` (all) | Wait for all in-sync replicas |
-| `key-serializer` | `StringSerializer` | Symbol used as string key |
-| `value-serializer` | `JsonSerializer` | Trade events as JSON |
 
 ### Consumer Settings
 
@@ -426,62 +534,153 @@ Every trade is written to all three tables simultaneously. Storage is cheap. Que
 Receive message
       │
       ▼
-Process (validate + persist)
+Process (validate + persist to Cassandra)
       │
-      ├── Success → ack.acknowledge() → offset committed
+      ├── Success   → ack.acknowledge() → offset committed
       └── Exception → no ack → message redelivered after visibility timeout
 ```
 
-This guarantees at-least-once processing. No trade event is ever lost.
+No trade event is ever silently lost.
 
 ---
 
-## 📁 Project Structure
+## 🖥️ React Frontend
+
+### Pages
+
+| Route | Page | Description |
+|---|---|---|
+| `/` | Dashboard | Submit trades, view results, search by symbol/trader via REST |
+| `/graphql-explorer` | GraphQL Explorer | Query trades via Apollo Client with interactive field selection |
+
+### File Structure
+
+```
+tradeflow-ui/
+├── package.json
+└── src/
+    ├── index.js          ← ApolloProvider + BrowserRouter setup
+    ├── App.js            ← React Router shell (routes only)
+    ├── DashboardPage.js  ← Trade dashboard (REST + axios)
+    ├── GraphQLPage.js    ← GraphQL explorer (Apollo Client)
+    └── queries.js        ← Reusable gql query definitions
+```
+
+### Apollo Client Setup (`index.js`)
+
+```jsx
+import { ApolloClient, InMemoryCache, ApolloProvider } from '@apollo/client';
+
+const client = new ApolloClient({
+  uri: 'http://localhost:8080/graphql',
+  cache: new InMemoryCache(),
+});
+```
+
+### Routing (`App.js`)
+
+```jsx
+import { Routes, Route } from 'react-router-dom';
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/"                 element={<DashboardPage />} />
+      <Route path="/graphql-explorer" element={<GraphQLPage />} />
+    </Routes>
+  );
+}
+```
+
+### useLazyQuery Pattern (`GraphQLPage.js`)
+
+```jsx
+const [fetchBySymbol, { data, loading, error }] =
+  useLazyQuery(GET_TRADES_BY_SYMBOL, { fetchPolicy: 'network-only' });
+
+// Fires only when user clicks Run
+fetchBySymbol({ variables: { symbol: 'AAPL' } });
+```
+
+`fetchPolicy: 'network-only'` bypasses Apollo's cache — always fetches fresh data. Essential for a live trading dashboard.
+
+### GraphQL Explorer Features
+
+- **Three query tabs** — By Symbol, By Trader, By Trade ID
+- **Interactive field selector** — toggle individual fields on/off, re-run to see only selected fields returned
+- **Table / JSON toggle** — switch between formatted table and raw Apollo response
+- **Single trade card view** — detailed breakdown for trade ID lookups
+- **Query shape preview** — shows the GraphQL query that will be sent
+
+---
+
+## ⚙️ Global CORS Configuration
+
+A single `WebMvcConfigurer` bean covers all endpoints — both REST and GraphQL. This is required because `@CrossOrigin` on individual controllers does not apply to Spring for GraphQL's internal servlet mapping.
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/**")
+                .allowedOrigins("http://localhost:3000")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*");
+    }
+}
+```
+
+---
+
+## 📁 Backend Project Structure
 
 ```
 tradeflow/
 ├── docker-compose.yml
 ├── pom.xml
-└── src/main/java/com/tradeflow/
-    ├── TradeflowApplication.java
-    ├── config/
-    │   ├── AwsConfig.java
-    │   └── KafkaConfig.java
-    ├── controller/
-    │   └── TradeController.java
-    ├── model/
-    │   ├── TradeEvent.java          ← Kafka message model
-    │   ├── TradeResponse.java       ← API response DTO
-    │   ├── TradeBySymbol.java       ← Cassandra entity
-    │   ├── TradeByTrader.java       ← Cassandra entity
-    │   └── TradeById.java           ← Cassandra entity
-    ├── producer/
-    │   └── TradeEventProducer.java
-    ├── consumer/
-    │   ├── TradeEventConsumer.java
-    │   └── TradeValidator.java
-    ├── repository/
-    │   ├── TradeBySymbolRepository.java
-    │   ├── TradeByTraderRepository.java
-    │   └── TradeByIdRepository.java
-    └── service/
-        ├── TradePersistenceService.java
-        └── TradeQueryService.java
-
-tradeflow-ui/
-├── package.json
-└── src/
-    └── App.js                       ← Single-file React dashboard
+└── src/main/
+    ├── java/com/tradeflow/
+    │   ├── TradeflowApplication.java
+    │   ├── config/
+    │   │   ├── KafkaConfig.java             ← Consumer factory, manual ack setup
+    │   │   └── WebConfig.java               ← Global CORS (REST + GraphQL)
+    │   ├── controller/
+    │   │   └── TradeController.java         ← REST endpoints
+    │   ├── graphql/
+    │   │   └── TradeGraphQLController.java  ← @QueryMapping handlers
+    │   ├── model/
+    │   │   ├── TradeEvent.java              ← Kafka message model
+    │   │   ├── TradeResponse.java           ← Shared REST + GraphQL DTO
+    │   │   ├── TradeBySymbol.java           ← Cassandra entity
+    │   │   ├── TradeByTrader.java           ← Cassandra entity
+    │   │   └── TradeById.java               ← Cassandra entity
+    │   ├── producer/
+    │   │   └── TradeEventProducer.java
+    │   ├── consumer/
+    │   │   ├── TradeEventConsumer.java
+    │   │   └── TradeValidator.java
+    │   ├── repository/
+    │   │   ├── TradeBySymbolRepository.java
+    │   │   ├── TradeByTraderRepository.java
+    │   │   └── TradeByIdRepository.java
+    │   └── service/
+    │       ├── TradePersistenceService.java
+    │       └── TradeQueryService.java
+    └── resources/
+        ├── application.yml
+        └── graphql/
+            └── schema.graphqls              ← GraphQL type definitions
 ```
 
 ---
 
 ## 🧪 Testing the Full Pipeline
 
-### 1. Submit trades via curl
+### Submit a trade
 
 ```bash
-# Valid BUY trade
 curl -X POST http://localhost:8080/api/trades \
   -H "Content-Type: application/json" \
   -d '{
@@ -492,53 +691,33 @@ curl -X POST http://localhost:8080/api/trades \
     "price": 189.50,
     "exchange": "NASDAQ"
   }'
-
-# Valid SELL trade
-curl -X POST http://localhost:8080/api/trades \
-  -H "Content-Type: application/json" \
-  -d '{
-    "traderId": "trader-002",
-    "symbol": "JPM",
-    "side": "SELL",
-    "quantity": 500,
-    "price": 198.75,
-    "exchange": "NYSE"
-  }'
-
-# Invalid trade (bad exchange — will FAIL validation)
-curl -X POST http://localhost:8080/api/trades \
-  -H "Content-Type: application/json" \
-  -d '{
-    "traderId": "trader-003",
-    "symbol": "MSFT",
-    "side": "BUY",
-    "quantity": 200,
-    "price": 415.00,
-    "exchange": "INVALID"
-  }'
 ```
 
-### 2. Query trades
+### Query via REST
 
 ```bash
-# By symbol
 curl http://localhost:8080/api/trades/symbol/AAPL
-
-# By trader
 curl http://localhost:8080/api/trades/trader/trader-001
-
-# By trade ID
 curl http://localhost:8080/api/trades/{tradeId}
 ```
 
-### 3. Verify directly in Cassandra
+### Query via GraphQL curl
+
+```bash
+curl -X POST http://localhost:8080/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query":"{ tradesBySymbol(symbol: \"AAPL\") { tradeId symbol side status tradeValue } }"}'
+```
+
+### Verify Cassandra directly
 
 ```bash
 docker exec -it tradeflow-cassandra cqlsh -e \
-  "SELECT trade_id, symbol, side, quantity, price, status FROM tradeflow.trades_by_symbol WHERE symbol='AAPL';"
+  "SELECT trade_id, symbol, side, quantity, price, status
+   FROM tradeflow.trades_by_symbol WHERE symbol='AAPL';"
 ```
 
-### 4. Monitor Kafka topic
+### Monitor Kafka topic live
 
 ```bash
 docker exec tradeflow-kafka kafka-console-consumer \
@@ -553,59 +732,38 @@ docker exec tradeflow-kafka kafka-console-consumer \
 
 ### Kafka Partition Key Strategy
 
-All trade events are keyed by `symbol`. Kafka hashes the key to determine the target partition. This means:
-
-- All `AAPL` trades always land on the same partition
-- All `JPM` trades always land on the same partition
-- Ordering is guaranteed **per symbol**, not globally
-- Up to 3 trades for different symbols can be processed **simultaneously** on different threads
+Trade events are keyed by `symbol`. All events for the same instrument land on the same partition, guaranteeing processing order per symbol. Up to 3 trades for different symbols are processed simultaneously on different consumer threads with zero coordination.
 
 ### CQRS — Command Query Responsibility Segregation
 
-The write path and read path are completely separate:
+Write and read paths are completely decoupled. The API returns `202 Accepted` immediately on submission. The consumer processes asynchronously. The read side queries Cassandra directly — no coupling to the write path.
 
-- **Write (Command):** `POST /api/trades` → Kafka → Consumer → Cassandra
-- **Read (Query):** `GET /api/trades/**` → Cassandra directly
+### GraphQL Field Selection
 
-The API returns `202 Accepted` immediately on write. Processing is asynchronous. The UI refreshes after a short delay to show the processed result.
-
-### Cassandra vs PostgreSQL for Trade Data
-
-| Requirement | PostgreSQL | Cassandra |
-|---|---|---|
-| Massive write throughput | Struggles | Native strength |
-| Time-series queries | Needs careful indexing | Designed for it |
-| Horizontal scale | Complex | Add nodes linearly |
-| Single point of failure | Needs Multi-AZ | Masterless by design |
-| Query flexibility | Any column | Must design per query |
+The GraphQL schema enforces types at the boundary — enums like `Side` and `TradeStatus` prevent invalid values at the type system level. Clients request exactly the fields they need in each query. The risk desk, compliance team, and settlement desk each get their own projection of the same trade data with a single endpoint.
 
 ### Manual Kafka Acknowledgment
 
-The consumer commits the offset **only after** successful validation and persistence. If the service crashes or Cassandra is unavailable, the message is redelivered automatically. No trade is ever silently lost.
+Offset commits only after successful validation and persistence. If the service crashes mid-processing, Kafka redelivers. No trade is ever silently lost — critical in financial systems where missing a message is a compliance violation.
 
-### Trade Validation Rules
+### Cassandra Query-Driven Modeling
 
-- Symbol: required, non-blank
-- Side: must be `BUY` or `SELL`
-- Quantity: must be positive integer
-- Price: must be positive decimal
-- Exchange: must be `NYSE`, `NASDAQ`, `LSE`, or `CME`
-- Trade value: must not exceed $50,000,000
+Three access patterns require three tables. The same trade is written to all three simultaneously. Results come back newest-first automatically via `CLUSTERING ORDER BY (timestamp DESC)` — no application-level sorting needed.
+
+### Global CORS for REST + GraphQL
+
+`@CrossOrigin` on individual controllers does not apply to Spring for GraphQL's servlet. A `WebMvcConfigurer` with `addCorsMappings("/**")` is the correct pattern to cover all transports from a single configuration.
 
 ---
 
-## 🔧 Useful Docker Commands
+## 🔧 Useful Commands
 
 ```bash
-# View container logs
-docker logs tradeflow-kafka -f
-docker logs tradeflow-cassandra -f
-
 # List Kafka topics
 docker exec tradeflow-kafka kafka-topics \
   --bootstrap-server localhost:9092 --list
 
-# Describe consumer group
+# Describe consumer group lag
 docker exec tradeflow-kafka kafka-consumer-groups \
   --bootstrap-server localhost:9092 \
   --describe --group tradeflow-consumer-group
@@ -613,11 +771,17 @@ docker exec tradeflow-kafka kafka-consumer-groups \
 # Open Cassandra shell
 docker exec -it tradeflow-cassandra cqlsh
 
-# Restart a single service
+# Restart a single Docker service
 docker compose restart kafka
 
-# Full reset (removes all data)
+# Full reset — removes all persisted data
 docker compose down -v && docker compose up -d
+
+# React clean install
+cd tradeflow-ui
+rm -rf node_modules package-lock.json
+npm install --legacy-peer-deps
+npm start
 ```
 
 ---
@@ -626,9 +790,10 @@ docker compose down -v && docker compose up -d
 
 - `replication-factor: 1` — single Kafka broker, no redundancy. Use 3 in production.
 - Cassandra `SimpleStrategy` replication — use `NetworkTopologyStrategy` in production.
-- No authentication on Kafka or Cassandra — add SASL/SSL and Cassandra auth for production.
-- React UI polls on a fixed delay after submit — replace with WebSocket for true real-time updates.
-- No dead letter topic configured for Kafka — add one to capture permanently failed messages.
+- No authentication on Kafka or Cassandra — add SASL/SSL for production.
+- Apollo Client 3.x requires `--legacy-peer-deps` with React 19.
+- React UI refreshes on a fixed delay after trade submission — replace with GraphQL Subscription + WebSocket for true real-time push.
+- No GraphQL mutations — trade submission still goes through the REST endpoint.
 
 ---
 
@@ -636,13 +801,14 @@ docker compose down -v && docker compose up -d
 
 | Enhancement | Concepts Covered |
 |---|---|
-| Add Kafka Dead Letter Topic | Mirror SQS DLQ pattern in Kafka |
-| WebSocket push to React | Real-time trade feed without polling |
+| GraphQL Mutation — submit trades | Complete GraphQL write path |
+| GraphQL Subscription | Real-time trade push over WebSocket |
+| Kafka Dead Letter Topic | Permanent failure handling, ops alerting |
 | Dockerize Spring Boot app | Add app container to docker-compose.yml |
-| Trade position aggregator | Stateful streaming, net position per symbol |
-| Spring Security + JWT | API authentication, JPMC API Gateway pattern |
-| Deploy to AWS ECS + RDS | Connect TradeFlow to LoanFlow AWS infrastructure |
-| Kafka Streams | Real-time aggregations — total volume per symbol |
+| Trade position aggregator | Net position per symbol, P&L calculation |
+| Spring Security + JWT | API authentication, token-based auth |
+| Deploy to AWS ECS | Connect TradeFlow to cloud infrastructure |
+| Kafka Streams | Real-time aggregations — volume and value per symbol |
 
 ---
 
@@ -651,9 +817,10 @@ docker compose down -v && docker compose up -d
 - [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
 - [Apache Cassandra Documentation](https://cassandra.apache.org/doc/latest/)
 - [Spring for Apache Kafka](https://docs.spring.io/spring-kafka/docs/current/reference/html/)
+- [Spring for GraphQL](https://docs.spring.io/spring-graphql/docs/current/reference/html/)
 - [Spring Data Cassandra](https://docs.spring.io/spring-data/cassandra/docs/current/reference/html/)
+- [Apollo Client Documentation](https://www.apollographql.com/docs/react/)
+- [React Router Documentation](https://reactrouter.com/en/main)
 - [Confluent Platform Docker Images](https://hub.docker.com/u/confluentinc)
 
 ---
-
-*Built as part of JPMC Senior Java Engineer interview preparation — April 2026*

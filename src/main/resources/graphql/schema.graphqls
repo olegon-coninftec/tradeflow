@@ -1,0 +1,30 @@
+type Trade {
+    tradeId:    ID!
+    traderId:   String!
+    symbol:     String!
+    side:       Side!
+    quantity:   Int!
+    price:      Float!
+    tradeValue: Float!
+    status:     TradeStatus!
+    exchange:   String!
+    timestamp:  String!
+}
+
+enum Side {
+    BUY
+    SELL
+}
+
+enum TradeStatus {
+    PENDING
+    EXECUTED
+    FAILED
+    CANCELLED
+}
+
+type Query {
+    tradeById(tradeId: ID!):              Trade
+    tradesBySymbol(symbol: String!):      [Trade!]!
+    tradesByTrader(traderId: String!):    [Trade!]!
+}
